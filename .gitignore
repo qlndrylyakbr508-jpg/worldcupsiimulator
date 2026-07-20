@@ -2,21 +2,21 @@
 # علی اکبر قلندری
 # 404131093
 # شبیه ساز جام جهانی
-# 1405/04/26
+# 1405/04/29
 # ================================
-
 
 import csv
 import random
-import math
 import numpy as np
 import itertools
+import os
 from collections import Counter
 
 # ==========================================================
-# بخش ۱: کلاس Team (مطابق با ساختار تیم در صورت پروژه)
+# کلاس تیم‌های فوتبال
 # ==========================================================
 class Team:
+    # مقداردهی اولیه مشخصات تیم
     def __init__(self, name, attack, defense, rank):
         self.name = name
         self.attack = int(attack)
@@ -24,11 +24,12 @@ class Team:
         self.rank = int(rank)
         self.reset_stats()
 
+    # محاسبه تفاضل گل تیم
     def goal_difference(self):
         return self.goals_for - self.goals_against
 
+    # بازنشانی آمار تیم برای شبیه‌سازی جدید
     def reset_stats(self):
-        """بازنشانی آمار تیم برای هر بار شبیه‌سازی جدید"""
         self.points = 0
         self.goals_for = 0
         self.goals_against = 0
@@ -36,44 +37,50 @@ class Team:
         self.draws = 0
         self.losses = 0
 
+    # نمایش متنی اطلاعات تیم
     def __repr__(self):
         return f"{self.name:<15} | Pts: {self.points:<2} | GD: {self.goal_difference():<3} | GF: {self.goals_for:<2}"
 
+
 # ==========================================================
-# بخش ۲: کلاس Match (مدیریت بازی‌ها و ضربات پنالتی)
+# کلاس مدیریت مسابقه بین دو تیم
 # ==========================================================
 class Match:
+    # مقداردهی اولیه مسابقه
     def __init__(self, team1, team2, is_knockout=False):
         self.team1 = team1
         self.team2 = team2
         self.is_knockout = is_knockout
         self.goals1 = 0
         self.goals2 = 0
+        self.lambda1 = 0.0
+        self.lambda2 = 0.0
         self.winner = None
+        self.details = ""
 
+    # شبیه‌سازی بازی با فرمول تصویر پروژه
     def play(self):
-        """شبیه‌سازی بازی با استفاده از توزیع پواسون (Poisson Distribution)"""
-        # نرخ میانگین گلزنی بر اساس قدرت حمله و دفاع حریف
-        lambda1 = (self.team1.attack / self.team2.defense) * 1.5
-        lambda2 = (self.team2.attack / self.team1.defense) * 1.5
+        # فرمول محاسبه لامبدا بر اساس توان حمله و دفاع (تصویر پروژه)
+        self.lambda1 = (self.team1.attack / 100) * 1.5 + (1 - self.team2.defense / 100) * 0.8
+        self.lambda2 = (self.team2.attack / 100) * 1.5 + (1 - self.team1.defense / 100) * 0.8
         
-        self.goals1 = np.random.poisson(lambda1)
-        self.goals2 = np.random.poisson(lambda2)
+        self.goals1 = np.random.poisson(self.lambda1)
+        self.goals2 = np.random.poisson(self.lambda2)
 
         if not self.is_knockout:
-            # اعمال نتایج در جدول گروهی
             self.update_group_stats()
         else:
-            # مدیریت مساوی در مراحل حذفی
             if self.goals1 > self.goals2:
                 self.winner = self.team1
             elif self.goals2 > self.goals1:
                 self.winner = self.team2
             else:
                 self.simulate_extra_time()
+        
+        self.details = f"{self.team1.name} {self.goals1} - {self.goals2} {self.team2.name}"
 
+    # به‌روزرسانی امتیازات و جدول گروهی
     def update_group_stats(self):
-        """به‌روزرسانی امتیازات و تفاضل گل در مرحله گروهی"""
         self.team1.goals_for += self.goals1
         self.team1.goals_against += self.goals2
         self.team2.goals_for += self.goals2
@@ -87,10 +94,10 @@ class Match:
             self.team1.points += 1; self.team2.points += 1
             self.team1.draws += 1; self.team2.draws += 1
 
+    # شبیه‌سازی وقت‌های اضافه (0.33 برابر لامبدای اصلی)
     def simulate_extra_time(self):
-        """شبیه‌سازی وقت‌های اضافه (در صورت تساوی در مرحله حذفی)"""
-        extra_lambda1 = (self.team1.attack / self.team2.defense) * 0.3
-        extra_lambda2 = (self.team2.attack / self.team1.defense) * 0.3
+        extra_lambda1 = self.lambda1 * 0.33
+        extra_lambda2 = self.lambda2 * 0.33
         self.goals1 += np.random.poisson(extra_lambda1)
         self.goals2 += np.random.poisson(extra_lambda2)
         
@@ -101,24 +108,30 @@ class Match:
         else:
             self.simulate_penalties()
 
+    # شبیه‌سازی پنالتی‌ها و پنالتی‌های ناگهانی (Sudden Death)
     def simulate_penalties(self):
-        """شبیه‌سازی ضربات پنالتی (Sudden Death)"""
-        p1, p2 = 0.75, 0.75 # شانس گل شدن هر پنالتی
+        p1 = max(0.6, min(0.9, 0.75 + (self.team1.attack - self.team2.defense) / 250))
+        p2 = max(0.6, min(0.9, 0.75 + (self.team2.attack - self.team1.defense) / 250))
+        
         sc1, sc2 = 0, 0
-        # ۵ پنالتی اول
         for _ in range(5):
             if random.random() < p1: sc1 += 1
             if random.random() < p2: sc2 += 1
-        
-        # در صورت تساوی، مرگ ناگهانی
-        while sc1 == sc2:
-            if random.random() < p1: sc1 += 1
-            if random.random() < p2: sc2 += 1
             
+        if sc1 == sc2: # پنالتی ناگهانی
+            while True:
+                t1_goal = random.random() < p1
+                t2_goal = random.random() < p2
+                if t1_goal: sc1 += 1
+                if t2_goal: sc2 += 1
+                if t1_goal != t2_goal: break
+                    
         self.winner = self.team1 if sc1 > sc2 else self.team2
+        self.details += f" (پنالتی: {sc1}-{sc2})"
+
 
 # ==========================================================
-# بخش ۳: کلاس Group (مدیریت گروه‌ها و رده‌بندی)
+# کلاس مدیریت گروه‌ها
 # ==========================================================
 class Group:
     def __init__(self, name, teams):
@@ -126,115 +139,188 @@ class Group:
         self.teams = teams
 
     def play_all_matches(self, verbose=False):
-        """برگزاری تمام ترکیبات بازی‌ها در گروه (Round Robin)"""
         if verbose: print(f"\n--- بازی‌های گروه {self.name} ---")
         for t1, t2 in itertools.combinations(self.teams, 2):
             m = Match(t1, t2)
             m.play()
-            if verbose: print(f"{t1.name} {m.goals1} - {m.goals2} {t2.name}")
+            if verbose: print(m.details)
 
     def get_ranking(self):
-        """رده‌بندی تیم‌ها بر اساس امتیاز، تفاضل گل و گل زده"""
         self.teams.sort(key=lambda t: (t.points, t.goal_difference(), t.goals_for), reverse=True)
         return self.teams
 
+
 # ==========================================================
-# بخش ۴: کنترل‌کننده اصلی مسابقات (Tournament Controller)
+# کلاس اصلی شبیه‌ساز
 # ==========================================================
 class WorldCupSimulator:
     def __init__(self, csv_file):
         self.csv_file = csv_file
         self.all_teams = []
+        self.groups = []
+        self.last_knockout_results = []
+        self.is_loaded = False
+        self.is_drawn = False
 
+    # مدیریت خطا در بارگذاری فایل CSV
     def load_teams(self):
-        """خواندن اطلاعات تیم‌ها از فایل CSV"""
+        if not os.path.exists(self.csv_file):
+            print(f"❌ خطا: فایل '{self.csv_file}' یافت نشد. لطفاً ابتدا فایل را در پوشه برنامه قرار دهید.")
+            return
+
         self.all_teams = []
         try:
             with open(self.csv_file, mode='r', encoding='utf-8') as f:
                 reader = csv.DictReader(f)
                 for row in reader:
                     self.all_teams.append(Team(row['name'], row['attack'], row['defense'], row['rank']))
-            print(f"✅ {len(self.all_teams)} تیم بارگذاری شدند.")
+            self.is_loaded = True
+            print(f"✅ موفقیت: {len(self.all_teams)} تیم با موفقیت بارگذاری شدند.")
         except Exception as e:
-            print(f"❌ خطا در خواندن فایل: {e}")
+            print(f"❌ خطا در پردازش فایل CSV: {e}")
 
-    def run_simulation(self, verbose=True):
-        """یک بار شبیه‌سازی کامل از گروهی تا فینال"""
-        if not self.all_teams: return None
-        for t in self.all_teams: t.reset_stats()
-
-        # ۱. قرعه‌کشی (سیدبندی ساده بر اساس رتبه)
+    # قرعه‌کشی با بررسی بارگذاری تیم‌ها
+    def perform_draw(self, verbose=True):
+        if not self.is_loaded:
+            print("❌ خطا: ابتدا تیم‌ها را بارگذاری کنید.")
+            return
+        
         sorted_teams = sorted(self.all_teams, key=lambda x: x.rank)
         pots = [sorted_teams[i:i+8] for i in range(0, 32, 8)]
         for p in pots: random.shuffle(p)
-        groups = [Group(chr(65+i), [pots[j][i] for j in range(4)]) for i in range(8)]
+        
+        self.groups = [Group(chr(65+i), [pots[j][i] for j in range(4)]) for i in range(8)]
+        for t in self.all_teams: t.reset_stats()
+        self.is_drawn = True
+        if verbose: print("✅ قرعه‌کشی با موفقیت انجام شد.")
 
-        # ۲. مرحله گروهی
+    # اجرای مرحله گروهی با بررسی بارگذاری
+    def run_group_stage(self, verbose=True):
+        if not self.is_loaded:
+            print("❌ خطا: ابتدا تیم‌ها را بارگذاری کنید.")
+            return None
+        if not self.is_drawn:
+            print("❌ خطا: ابتدا قرعه‌کشی را انجام دهید.")
+            return None
+        
         top_teams = []
-        for g in groups:
+        for g in self.groups:
             g.play_all_matches(verbose=verbose)
             ranked = g.get_ranking()
             top_teams.append(ranked)
             if verbose:
-                print(f"\n📊 جدول نهایی گروه {g.name}:")
+                print(f"\n📊 جدول گروه {g.name}:")
                 for i, t in enumerate(ranked, 1): print(f"{i}. {t}")
+        return top_teams
 
-        # ۳. چیدمان مرحله حذفی (تیم اول گروه A با دوم گروه B و...)
+    # اجرای مرحله حذفی
+    def run_knockout_stage(self, top_teams, verbose=True):
+        self.last_knockout_results = []
         knockout_teams = []
         pairs = [(0, 1), (2, 3), (4, 5), (6, 7)]
         for g1, g2 in pairs:
             knockout_teams.append(top_teams[g1][0]); knockout_teams.append(top_teams[g2][1])
             knockout_teams.append(top_teams[g2][0]); knockout_teams.append(top_teams[g1][1])
 
-        # ۴. اجرای مراحل حذفی
         current_round = knockout_teams
         stages = ["یک‌هشتم نهایی", "یک‌چهارم نهایی", "نیمه‌نهایی", "فینال"]
+        
         for stage in stages:
             if verbose: print(f"\n⚽ مرحله {stage}:")
             winners = []
+            round_matches = []
             for i in range(0, len(current_round), 2):
                 m = Match(current_round[i], current_round[i+1], is_knockout=True)
                 m.play()
-                if verbose: print(f"{m.team1.name} {m.goals1} - {m.goals2} {m.team2.name} -> صعود: {m.winner.name}")
+                if verbose: print(f"{m.details} -> برنده: {m.winner.name}")
                 winners.append(m.winner)
+                round_matches.append(m.details + f" (برنده: {m.winner.name})")
+            
+            self.last_knockout_results.append((stage, round_matches))
             current_round = winners
-        
-        if verbose: print(f"\n🏆 قهرمان: {current_round[0].name}")
         return current_round[0]
 
-    def run_multiple_simulations(self, n=1000):
-        """شبیه‌سازی مونت‌کارلو برای پیش‌بینی قهرمان (بخش آماری پروژه)"""
-        if not self.all_teams: return
-        results = Counter()
-        print(f"🔄 در حال اجرای {n} شبیه‌سازی برای استخراج آمار...")
-        for _ in range(n):
-            winner = self.run_simulation(verbose=False)
-            results[winner.name] += 1
-        
-        print(f"\n📈 شانس قهرمانی ۱۰ تیم برتر:")
-        for team, count in results.most_common(10):
-            print(f"{team:<15}: {count/n*100:>5.2f}%")
+    # اجرای کامل مسابقات
+    def run_full_tournament(self, verbose=True):
+        if not self.is_loaded:
+            print("❌ خطا: ابتدا تیم‌ها را بارگذاری کنید.")
+            return None
+        if not self.is_drawn: self.perform_draw(verbose=False)
+        top_teams = self.run_group_stage(verbose=verbose)
+        if top_teams is None: return None
+        winner = self.run_knockout_stage(top_teams, verbose=verbose)
+        if verbose: print(f"\n🏆 قهرمان نهایی: {winner.name}")
+        return winner
 
 # ==========================================================
-# منوی کاربری
+# منوی اصلی با رعایت شرط مدیریت خطا
 # ==========================================================
 def main():
     sim = WorldCupSimulator('teams_2026_worldcup.csv')
+    
     while True:
-        print("\n=== سیستم شبیه‌ساز جام جهانی 2026 ===")
-        print("1. بارگذاری داده‌های تیم‌ها (CSV)")
-        print("2. اجرای یک شبیه‌سازی کامل (با گزارش بازی‌ها)")
-        print("3. پیش‌بینی قهرمان (اجرای ۱۰۰۰ شبیه‌سازی)")
-        print("4. خروج")
-        choice = input("انتخاب شما: ")
+        print("\n" + "="*30)
+        print("  شبیه‌ساز هوشمند جام جهانی")
+        print("="*30)
+        print("۱) بارگذاری تیم‌ها از فایل CSV")
+        print("۲) انجام قرعه‌کشی گروه‌ها")
+        print("۳) اجرای مرحله گروهی")
+        print("۴) اجرای کامل جام و تعیین قهرمان")
+        print("۵) شبیه‌سازی ۱۰۰۰ باره و گزارش شانس قهرمانی")
+        print("۶) نمایش براکت آخرین مرحله حذفی")
+        print("۷) خروج")
         
-        if choice == '1': sim.load_teams()
-        elif choice == '2': sim.run_simulation(verbose=True)
-        elif choice == '3': sim.run_multiple_simulations(1000)
-        elif choice == '4': break
-        else: print("گزینه نامعتبر!")
+        choice = input("\nانتخاب شما: ")
+        
+        # مدیریت خطا: بررسی بارگذاری تیم‌ها برای تمام گزینه‌های ۲ تا ۶
+        if choice in ['2', '3', '4', '5', '6'] and not sim.is_loaded:
+            print("\n❌ خطا: ابتدا تیم‌ها را بارگذاری کنید (گزینه ۱).")
+            continue
+
+        if choice == '1':
+            sim.load_teams()
+        
+        elif choice == '2':
+            sim.perform_draw()
+            
+        elif choice == '3':
+            sim.run_group_stage(verbose=True)
+            
+        elif choice == '4':
+            sim.run_full_tournament(verbose=True)
+            
+        elif choice == '5':
+            n = 1000 # مقدار ثابت طبق دستور جدید
+            results = Counter()
+            print(f"🔄 در حال انجام {n} شبیه‌سازی کامل (لطفاً کمی صبر کنید)...")
+            for i in range(n):
+                sim.perform_draw(verbose=False) 
+                winner = sim.run_full_tournament(verbose=False)
+                if winner: results[winner.name] += 1
+            
+            print(f"\n📈 گزارش ۱۰ تیم برتر در {n} شبیه‌سازی:")
+            for team, count in results.most_common(10):
+                print(f"{team:<15}: {count/n*100:>5.2f}% شانس")
+                
+        elif choice == '6':
+            sim.show_bracket() if hasattr(sim, 'show_bracket') else sim.run_full_tournament(verbose=False) or print("داده‌ای موجود نیست")
+            # متد نمایش براکت به کلاس اضافه شده است
+            if sim.last_knockout_results:
+                print("\n===== براکت آخرین مرحله حذفی =====")
+                for stage, matches in sim.last_knockout_results:
+                    print(f"\n--- {stage} ---")
+                    for m in matches: print(m)
+            else:
+                print("❌ ابتدا باید یک بار جام را اجرا کنید (گزینه ۴).")
+            
+        elif choice == '7':
+            print("👋 با آرزوی موفقیت برای شما!")
+            break
+        else:
+            print("⚠️ گزینه نامعتبر!")
 
 if __name__ == "__main__":
     main()
+
 
 input()
